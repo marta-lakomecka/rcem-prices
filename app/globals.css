@@ -1,0 +1,80 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0F1117;
+  --surface: #181C27;
+  --border: #252A38;
+  --accent: #F5E642;
+  --accent-dim: rgba(245, 230, 66, 0.10);
+  --accent-glow: rgba(245, 230, 66, 0.25);
+  --text-primary: #F0F0F0;
+  --text-secondary: #8A8FA8;
+  --text-muted: #4A5068;
+  --green: #3DDB84;
+  --red: #FF5C5C;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  background-color: var(--bg);
+  color: var(--text-primary);
+  font-family: 'Inter', sans-serif;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-display { font-family: 'Space Grotesk', sans-serif; }
+
+@keyframes countUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-count { animation: countUp 0.7s cubic-bezier(0.16,1,0.3,1) forwards; }
+
+.bg-grid {
+  background-image:
+    linear-gradient(rgba(245,230,66,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(245,230,66,0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+.accent-glow { text-shadow: 0 0 48px rgba(245,230,66,0.4); }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.card-accent {
+  background: var(--accent-dim);
+  border: 1px solid rgba(245,230,66,0.22);
+  border-radius: 12px;
+}
+
+@keyframes pulse-dot {
+  0%,100% { opacity:1; transform:scale(1); }
+  50%      { opacity:0.3; transform:scale(0.8); }
+}
+.pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner { animation: spin 0.85s linear infinite; }
+
+@keyframes bar-grow {
+  from { transform: scaleY(0); }
+  to   { transform: scaleY(1); }
+}
+.bar-grow { transform-origin: bottom; animation: bar-grow 0.45s cubic-bezier(0.16,1,0.3,1) forwards; }
+
+@keyframes fade-in {
+  from { opacity:0; transform:translateY(16px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+.fade-in { animation: fade-in 0.5s cubic-bezier(0.16,1,0.3,1) forwards; }
