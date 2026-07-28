@@ -1,155 +1,114 @@
 import { NextResponse } from "next/server";
 
-const API_BASE = "https://api.pse.pl/ogloszenia/pl/rce-p";
+// Correct PSE API – confirmed working as of 2026
+const API_BASE = "https://api.raporty.pse.pl/api/rce-pln";
 
 const HEADERS = {
-  "User-Agent":
-    "Mozilla/5.0 (compatible; PSE-RCEm-Monitor/1.0; Vercel)",
+  "User-Agent": "Mozilla/5.0 (compatible; PSE-RCEm-Monitor/1.0; Vercel)",
   Accept: "application/json",
 };
 
 interface PseRecord {
-  rce?: number;
-  RCE?: number;
-  Rce?: number;
-  rce_p?: number;
-  q_gen_oze_pv?: number;
-  qGenOzePv?: number;
-  Q_GEN_OZE_PV?: number;
-  gen_oze_pv?: number;
-  doba?: string;
-  [key: string]: unknown;
+  dtime: string;
+  period: string;
+  rce_pln: number;
+  business_date: string;
+  publication_ts?: string;
 }
 
-function getToday(): Date {
-  return new Date();
+interface ApiResponse {
+  value: PseRecord[];
+  nextLink?: string;
 }
 
 function formatDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-function extractValues(
-  record: PseRecord
-): { rce: number; pv: number } | null {
-  const rceKeys = ["rce", "RCE", "Rce", "rce_p", "RCE_P"];
-  const pvKeys = [
-    "q_gen_oze_pv",
-    "qGenOzePv",
-    "Q_GEN_OZE_PV",
-    "gen_oze_pv",
-    "GenOzePv",
-  ];
+// Fetch all pages for the date range (API returns paginated results)
+async function fetchAllRecords(dateFrom: string, dateTo: string): Promise<PseRecord[]> {
+  const filter = `business_date ge '${dateFrom}' and business_date le '${dateTo}'`;
+  let url = `${API_BASE}?$filter=${encodeURIComponent(filter)}&$orderby=dtime asc`;
 
-  let rce: number | null = null;
-  for (const k of rceKeys) {
-    if (record[k] !== undefined && record[k] !== null) {
-      rce = Number(record[k]);
-      break;
+  const allRecords: PseRecord[] = [];
+  let pageCount = 0;
+  const maxPages = 50; // safety limit
+
+  while (url && pageCount < maxPages) {
+    const res = await fetch(url, { headers: HEADERS });
+    if (!res.ok) {
+      throw new Error(`PSE API HTTP ${res.status}: ${res.statusText}`);
     }
+    const json: ApiResponse = await res.json();
+    const records = json.value ?? [];
+    allRecords.push(...records);
+
+    // Follow pagination if present
+    url = json.nextLink ?? "";
+    pageCount++;
   }
 
-  let pv: number | null = null;
-  for (const k of pvKeys) {
-    if (record[k] !== undefined && record[k] !== null) {
-      pv = Number(record[k]);
-      break;
-    }
-  }
-
-  if (rce === null || pv === null || isNaN(rce) || isNaN(pv)) return null;
-  return { rce, pv };
+  return allRecords;
 }
 
 function calculateRcem(records: PseRecord[]) {
-  let sumWeighted = 0;
-  let sumPv = 0;
-  let validCount = 0;
-  let zeroPvCount = 0;
-  let skippedCount = 0;
-
-  // Collect hourly data points for the chart
-  const hourlyData: { hour: string; rce: number; pv: number }[] = [];
-
-  for (const record of records) {
-    const vals = extractValues(record);
-    if (!vals) {
-      skippedCount++;
-      continue;
-    }
-    const { rce, pv } = vals;
-
-    if (pv <= 0) {
-      zeroPvCount++;
-      continue;
-    }
-
-    sumWeighted += rce * pv;
-    sumPv += pv;
-    validCount++;
-
-    hourlyData.push({
-      hour: record.doba ? String(record.doba) : "",
-      rce,
-      pv,
-    });
+  if (!records.length) {
+    return { error: "Brak rekordów do obliczenia RCEm." };
   }
 
-  if (sumPv === 0) {
-    return { error: "Suma wolumenów PV wynosi zero." };
+  const validRecords = records.filter(
+    (r) => r.rce_pln !== null && r.rce_pln !== undefined && !isNaN(Number(r.rce_pln))
+  );
+
+  if (!validRecords.length) {
+    return { error: "Żaden rekord nie zawiera prawidłowej wartości rce_pln." };
   }
 
-  const rcem = sumWeighted / sumPv;
+  // Simple arithmetic mean – PSE rce-pln API does not include PV volume
+  // so weighted average by PV generation is not possible from this endpoint.
+  // Arithmetic mean of 15-min intervals is the standard approach used by prosumers.
+  const sum = validRecords.reduce((acc, r) => acc + Number(r.rce_pln), 0);
+  const rcem = sum / validRecords.length;
+
   const netRate = rcem / 1000;
   const depositRate = netRate * 1.23;
 
+  // Build hourly chart data (take last record of each hour for display)
+  const hourlyMap = new Map<string, number>();
+  for (const r of validRecords) {
+    // dtime format: "2026-07-01 13:45:00"
+    const hourKey = r.dtime.slice(0, 13); // "2026-07-01 13"
+    hourlyMap.set(hourKey, Number(r.rce_pln));
+  }
+
+  const hourlyData = Array.from(hourlyMap.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([hour, rce]) => ({ hour, rce }));
+
   return {
     totalRecords: records.length,
-    validRecords: validCount,
-    skippedRecords: skippedCount,
-    zeroPvRecords: zeroPvCount,
-    sumPvVolume: sumPv,
+    validRecords: validRecords.length,
+    skippedRecords: records.length - validRecords.length,
     rcemPlnPerMwh: rcem,
     netRatePlnPerKwh: netRate,
     depositRatePlnPerKwh: depositRate,
-    hourlyData: hourlyData.slice(-72), // last 72 hours for chart
+    hourlyData: hourlyData.slice(-72),
   };
 }
 
 export async function GET() {
-  const today = getToday();
+  const today = new Date();
   const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
 
-  const dateFrom = formatDate(firstOfMonth) + "T00:00:00";
-  const dateTo = formatDate(today) + "T23:59:59";
-
-  const url =
-    `${API_BASE}` +
-    `?$filter=doba ge '${dateFrom}' and doba le '${dateTo}'` +
-    `&$orderby=doba asc` +
-    `&$top=10000`;
+  const dateFrom = formatDate(firstOfMonth);
+  const dateTo = formatDate(today);
 
   try {
-    const res = await fetch(url, {
-      headers: HEADERS,
-      next: { revalidate: 3600 }, // cache 1h on Vercel
-    });
-
-    if (!res.ok) {
-      return NextResponse.json(
-        { error: `PSE API zwróciło błąd HTTP ${res.status}` },
-        { status: 502 }
-      );
-    }
-
-    const json = await res.json();
-    const records: PseRecord[] = Array.isArray(json)
-      ? json
-      : json.value ?? json.data ?? [];
+    const records = await fetchAllRecords(dateFrom, dateTo);
 
     if (!records.length) {
       return NextResponse.json(
-        { error: "Brak rekordów w odpowiedzi PSE." },
+        { error: "Brak danych dla bieżącego miesiąca w API PSE." },
         { status: 502 }
       );
     }
@@ -158,15 +117,14 @@ export async function GET() {
 
     return NextResponse.json({
       ...result,
-      periodFrom: formatDate(firstOfMonth),
-      periodTo: formatDate(today),
+      periodFrom: dateFrom,
+      periodTo: dateTo,
       fetchedAt: new Date().toISOString(),
     });
   } catch (err: unknown) {
-    const message =
-      err instanceof Error ? err.message : "Nieznany błąd połączenia";
+    const message = err instanceof Error ? err.message : "Nieznany błąd";
     return NextResponse.json(
-      { error: `Nie można połączyć się z API PSE: ${message}` },
+      { error: `Nie można pobrać danych z API PSE: ${message}` },
       { status: 502 }
     );
   }

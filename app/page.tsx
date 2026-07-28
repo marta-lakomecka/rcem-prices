@@ -18,7 +18,6 @@ import {
 interface HourlyPoint {
   hour: string;
   rce: number;
-  pv: number;
 }
 
 interface RcemData {
@@ -28,8 +27,6 @@ interface RcemData {
   totalRecords: number;
   validRecords: number;
   skippedRecords: number;
-  zeroPvRecords: number;
-  sumPvVolume: number;
   rcemPlnPerMwh: number;
   netRatePlnPerKwh: number;
   depositRatePlnPerKwh: number;
@@ -115,10 +112,6 @@ function RceBarChart({ data }: { data: HourlyPoint[] }) {
                 }}
               >
                 {fmt(pt.rce, 1)} zł/MWh
-                <br />
-                <span style={{ color: "#8A8FA8" }}>
-                  PV: {fmt(pt.pv, 0)} MWh
-                </span>
               </div>
             </div>
           );
@@ -440,23 +433,19 @@ export default function Home() {
                   Statystyki bieżącego miesiąca
                 </span>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                 {[
                   {
-                    label: "Rekordów z API",
+                    label: "Przedziałów 15-min",
                     value: data.totalRecords.toLocaleString("pl-PL"),
                   },
                   {
-                    label: "Godzin z PV > 0",
+                    label: "Prawidłowych rekordów",
                     value: data.validRecords.toLocaleString("pl-PL"),
                   },
                   {
-                    label: "Godzin bez PV",
-                    value: data.zeroPvRecords.toLocaleString("pl-PL"),
-                  },
-                  {
-                    label: "Wolumen PV",
-                    value: `${fmt(data.sumPvVolume, 0)} MWh`,
+                    label: "Pominięte (brak danych)",
+                    value: data.skippedRecords.toLocaleString("pl-PL"),
                   },
                 ].map((item) => (
                   <div key={item.label}>
@@ -495,7 +484,7 @@ export default function Home() {
                   className="font-display"
                   style={{ fontSize: 13, color: "var(--accent)", lineHeight: 1.8 }}
                 >
-                  RCEm = Σ(rce × q_gen_oze_pv) / Σ(q_gen_oze_pv)
+                  RCEm = Σ(rce_pln) / n
                   <br />
                   stawka_netto = RCEm / 1000
                   <br />
@@ -506,9 +495,11 @@ export default function Home() {
                 className="mt-3"
                 style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}
               >
-                Źródło danych: Polskie Sieci Elektroenergetyczne (api.pse.pl). Dane są
-                odświeżane automatycznie co 30 minut. Godziny z zerową generacją PV są
-                pomijane w ważeniu.
+                Źródło danych: Polskie Sieci Elektroenergetyczne –{" "}
+                <span style={{ color: "var(--text-secondary)" }}>api.raporty.pse.pl/api/rce-pln</span>.
+                Dane w rozdzielczości 15-minutowej. RCEm liczone jako średnia arytmetyczna
+                wszystkich przedziałów w miesiącu (API PSE nie udostępnia wolumenu PV
+                w endpoincie rce-pln). Odświeżanie co 30 minut.
               </p>
             </div>
           </>
